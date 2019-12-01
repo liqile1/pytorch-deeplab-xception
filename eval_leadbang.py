@@ -35,7 +35,7 @@ class Tester(object):
 
         # self.val_loader = leadbang.LeadBangTest(Path.db_root_dir("leadbang"))
         self.nclass = 2
-
+        print(args.backbone)
         # Define network
         self.model = DeepLab(num_classes=self.nclass,
                         backbone=args.backbone,
@@ -43,29 +43,38 @@ class Tester(object):
                         sync_bn=args.sync_bn,
                         freeze_bn=args.freeze_bn)
 
+        #self.model = self.model.cuda()
+        self.model = torch.nn.DataParallel(self.model)
+        #cudnn.benchmark = True
         self.model = self.model.cuda()
-
         args.start_epoch = 0
 
 
     def test(self, epoch):
         saved_state_dict = torch.load("checkpoint/{}.pth".format(epoch))
+        # print('state dict: ', saved_state_dict)
+        #print('type of dict: ', type(saved_state_dict))
+        #new_dict = {}
+        #for name in saved_state_dict:
+        #    new_dict[name[7:]] = saved_state_dict[name] 
         self.model.load_state_dict(saved_state_dict)
-        self.model.test()
+        self.model.eval()
         result = {}
-        # tbar = tqdm(self.train_loader)
+        # tbiar = tqdm(self.train_loader)
         # num_img_tr = len(self.train_loader)
         for i, sample in enumerate(self.test_loader):
             image, target, _, name = sample
             
             image, target = image.cuda(), target.cuda()
-            
-            output = self.model(image)
+            print('size of img: ', image.size())
+            with torch.no_grad():
+                output = self.model(image)
             output = output.cpu().data.numpy().transpose(0,2,3,1)
             seg_pred = np.asarray(np.argmax(output, axis=3), dtype=np.uint8)
             seg_pred = np.reshape(seg_pred, (output.shape[1], output.shape[2]))
             seg_pred = 255 - 255 * seg_pred
             result[name[0]] = seg_pred.copy()
+            print('process: ', name)
         return result
 
 
@@ -152,7 +161,7 @@ def main():
     #     else:
     #         args.sync_bn = False
     args.sync_bn = False
-
+    #args.freeze_bn = True
     # default settings for epochs, batch_size and lr
     args.epochs = 1000
 
@@ -161,6 +170,7 @@ def main():
 
     # if args.test_batch_size is None:
     #     args.test_batch_size = args.batch_size
+
 
     # if args.lr is None:
     #     lrs = {
