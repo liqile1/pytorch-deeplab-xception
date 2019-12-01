@@ -2,12 +2,12 @@ import argparse
 import os
 import os.path as osp
 import numpy as np
-from tqdm import tqdm
+#from tqdm import tqdm
 
 import torch
 
 from mypath import Path
-from dataloaders import make_data_loader
+#from dataloaders import make_data_loader
 from dataloaders.datasets import leadbang
 from modeling.sync_batchnorm.replicate import patch_replication_callback
 from modeling.deeplab import *
@@ -24,7 +24,7 @@ def lr_poly(base_lr, iter, max_iter, power):
    
    
 def adjust_learning_rate(optimizer, i_iter):
-    lr = lr_poly(0.01, i_iter, 5000, 0.9)
+    lr = lr_poly(0.01, i_iter, 1000, 0.9)
     optimizer.param_groups[0]['lr'] = lr
     return lr
 
@@ -35,7 +35,7 @@ class Trainer(object):
         # Define Dataloader
         kwargs = {'num_workers': args.workers, 'pin_memory': True}
         # self.train_loader, self.val_loader, self.test_loader, self.nclass = make_data_loader(args, **kwargs)
-        self.train_set = leadbang.LeadBangTrain(Path.db_root_dir("leadbang"))
+        self.train_set = leadbang.LeadBangTrain("/leadbang/data/")
         self.train_loader = data.DataLoader(self.train_set, 
                     batch_size=args.batch_size, shuffle=True, num_workers=1, pin_memory=True)
 
@@ -171,7 +171,7 @@ def main():
     args = parser.parse_args()
     
     args.cuda = True
-    args.gpu_ids = [0,1,2,3]
+    args.gpu_ids = [0,2]
 
     # if args.sync_bn is None:
     #     if args.cuda and len(args.gpu_ids) > 1:
@@ -181,7 +181,7 @@ def main():
     args.sync_bn = True
 
     # default settings for epochs, batch_size and lr
-    args.epochs = 5000
+    args.epochs = 1000
 
     # if args.batch_size is None:
     #     args.batch_size = 4 * len(args.gpu_ids)
