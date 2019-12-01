@@ -18,6 +18,7 @@ from utils.saver import Saver
 from utils.summaries import TensorboardSummary
 from utils.metrics import Evaluator
 from torch.utils import data
+import cv2
 
 def lr_poly(base_lr, iter, max_iter, power):
     return base_lr*((1-float(iter)/max_iter)**(power))
@@ -36,8 +37,11 @@ class Trainer(object):
         kwargs = {'num_workers': args.workers, 'pin_memory': True}
         # self.train_loader, self.val_loader, self.test_loader, self.nclass = make_data_loader(args, **kwargs)
         self.train_set = leadbang.LeadBangTrain("/leadbang/data/")
+        self.test_set = leadbang.LeadBangTest("/leadbang/data")
         self.train_loader = data.DataLoader(self.train_set, 
                     batch_size=args.batch_size, shuffle=True, num_workers=1, pin_memory=True)
+        self.test_loader = data.DataLoader(self.test_set,
+                    batch_size=1, shuffle=False, num_workers=1, pin_memory=True)
 
         # self.val_loader = leadbang.LeadBangTest(Path.db_root_dir("leadbang"))
         self.nclass = 2
@@ -95,7 +99,42 @@ class Trainer(object):
             print('taking snapshot ...')
             torch.save(self.model.state_dict(),osp.join('checkpoint', str(epoch)+'.pth'))     
 
+    def is_defect(self, lb):
+        if len(np.where(lb > 0.5)[0] > 0):
+            return True
+        return False
 
+    def test(self, epoch):
+        self.model.eval()
+        ok = 0
+        ng = 0
+        mis_ok = 0
+        mis_ng = 0
+        for i, sample in enumerate(self.test_loader):
+            image, target, _, name = sample
+            image, target = image.cuda(), target.cuda()
+            with torch.no_grad():
+                output = self.model(image)
+            pred = output.data.cpu().numpy()
+            target = target.cpu().numpy()
+            pred = np.argmax(pred, axis=1)
+            target_defect = self.is_defect(target)
+            pred_defect = self.is_defect(pred)
+            if target_defect:
+                ng += 1
+                if not pred_defect:
+                    mis_ok += 1
+            else:
+                ok += 1
+                if pred_defect:
+                    mis_ng += 1
+            pred = np.reshape(pred, (pred.shape[1], pred.shape[2]))
+            pred = np.array(pred, dtype=np.uint8)
+            pred = 255 - pred * 255
+            cv2.imwrite('/leadbang/data/test_result/' + name[0] + '.bmp', pred)
+        print('mis ok: ', mis_ok, '/', ng)
+        print('mis ng: ', mis_ng, '/', ok)
+            
 def main():
     parser = argparse.ArgumentParser(description="PyTorch DeeplabV3Plus Training")
     parser.add_argument('--backbone', type=str, default='resnet',
@@ -198,6 +237,7 @@ def main():
     #     args.lr = lrs[args.dataset.lower()] / (4 * len(args.gpu_ids)) * args.batch_size
     args.lr = 0.01
     args.batch_size = 4
+    args.backbone = 'mobilenet'
 
 
     print(args)
@@ -208,6 +248,8 @@ def main():
     trainer = Trainer(args)
     for epoch in range(args.epochs):
         trainer.training(epoch)
+        if epoch % 10 == 0:
+            trainer.test(epoch)
         # if not trainer.args.no_val and epoch % args.eval_interval == (args.eval_interval - 1):
         #     trainer.validation(epoch)
 
